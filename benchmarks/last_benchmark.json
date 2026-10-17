@@ -1,0 +1,14 @@
+{
+  "total_orders": 50000,
+  "total_duration_sec": 0.0427,
+  "orders_per_sec": 1170444.86,
+  "trades_executed": 34053,
+  "total_shares_traded": 1883690,
+  "active_orders_remaining": 8156,
+  "min_latency_us": 0.00,
+  "avg_latency_us": 0.80,
+  "median_latency_us": 0.50,
+  "p95_latency_us": 1.50,
+  "p99_latency_us": 2.40,
+  "max_latency_us": 2324.20
+}
