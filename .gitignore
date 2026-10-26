@@ -21,9 +21,14 @@ ENV/
 
 # Streamlit
 .streamlit/
+!.streamlit/config.toml
 
-# Persistence test data
+# Persistence test data & local database
 data/*.csv
+data/*.db
+data/*.db-wal
+data/*.db-shm
+data/*.db-journal
 !data/.gitkeep
 
 # IDE & OS

@@ -114,6 +114,7 @@ class FinMatchEngine:
         self.lib = None
         self.load_error = None
         self.dll_path = None
+        self._orders_cache: Dict[int, Dict[str, Any]] = {}
         self._load_library(lib_path)
 
     def _find_library(self, custom_path: Optional[str] = None) -> Optional[str]:
@@ -246,6 +247,7 @@ class FinMatchEngine:
     def reset_engine(self) -> bool:
         if not self.lib:
             return False
+        self._orders_cache.clear()
         return self.lib.fm_reset() == 0
 
     def place_order(self, trader_id: str, symbol: str, side: str, price_inr: float, quantity: int) -> Dict[str, Any]:
@@ -275,9 +277,13 @@ class FinMatchEngine:
                 "error_code": err_code,
             }
 
-        return {
+        order_dict = {
             "success": True,
             "order_id": res.order_id,
+            "trader_id": trader_id,
+            "symbol": symbol.upper(),
+            "side": side.upper(),
+            "price": price_inr,
             "status": self.STATUS_NAMES.get(res.status, "UNKNOWN"),
             "status_code": res.status,
             "original_qty": res.original_qty,
@@ -285,6 +291,8 @@ class FinMatchEngine:
             "remaining_qty": res.remaining_qty,
             "trades_generated": res.trades_generated,
         }
+        self._orders_cache[res.order_id] = order_dict
+        return order_dict
 
     def cancel_order(self, order_id: int) -> Dict[str, Any]:
         """Cancels an active order through the C matching engine."""
@@ -302,12 +310,16 @@ class FinMatchEngine:
                 "error_code": err_code,
             }
 
-        return {
+        cancel_dict = {
             "success": True,
             "order_id": res.order_id,
             "status": self.STATUS_NAMES.get(res.status, "CANCELLED"),
             "cancelled_qty": res.cancelled_qty,
         }
+        if res.order_id in self._orders_cache:
+            self._orders_cache[res.order_id]["status"] = "CANCELLED"
+            self._orders_cache[res.order_id]["remaining_qty"] = 0
+        return cancel_dict
 
     def get_order_book(self, symbol: str) -> Dict[str, Any]:
         """Retrieves a depth snapshot of the order book for a given symbol."""
@@ -368,10 +380,39 @@ class FinMatchEngine:
                 "sell_order_id": t.sell_order_id,
                 "price": t.price_paise / 100.0,
                 "quantity": t.quantity,
+                "executed_qty": t.quantity,
                 "timestamp": t.timestamp,
                 "sequence": t.sequence,
             })
         return results
+
+    def get_trade_history(self, symbol: Optional[str] = None, max_trades: int = 100) -> List[Dict[str, Any]]:
+        """Alias for get_recent_trades with backwards compatibility."""
+        return self.get_recent_trades(symbol=symbol, max_trades=max_trades)
+
+    def get_order(self, order_id: int) -> Optional[Dict[str, Any]]:
+        """Retrieves details of an active or recent order by ID."""
+        if not self.lib:
+            return None
+        snap = OrderSnapshot()
+        rc = self.lib.fm_get_order(order_id, ctypes.byref(snap))
+        if rc == 0:
+            order_dict = {
+                "order_id": snap.order_id,
+                "trader_id": snap.trader_id.decode("utf-8", errors="replace"),
+                "symbol": snap.symbol.decode("utf-8", errors="replace"),
+                "side": self.SIDE_NAMES.get(snap.side, "UNKNOWN"),
+                "price": snap.price_paise / 100.0,
+                "original_qty": snap.original_qty,
+                "remaining_qty": snap.remaining_qty,
+                "filled_qty": snap.original_qty - snap.remaining_qty,
+                "status": self.STATUS_NAMES.get(snap.status, "UNKNOWN"),
+                "sequence": snap.sequence,
+                "timestamp": snap.timestamp,
+            }
+            self._orders_cache[order_id] = order_dict
+            return order_dict
+        return self._orders_cache.get(order_id)
 
     def get_market_stats(self, symbol: str) -> Dict[str, Any]:
         """Retrieves aggregated market statistics for a symbol."""
